@@ -1,0 +1,19 @@
+[package]
+name = "nginx-config-parser"
+version = "0.1.0"
+edition = "2021"
+authors = ["Semubico"]
+description = "A naive implementation of a very basic nginx config parser based on logos lexer. Returns generic string-typed AST. Production-unready"
+license = "GPLv2"
+homepage = "https://git.protogen.engineering/semubico/nginx-config-parser"
+
+[lib]
+name = "nginx_config_parser"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tool"
+path = "src/main.rs"
+
+[dependencies]
+logos = "0.15.0"
