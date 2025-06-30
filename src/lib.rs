@@ -1,5 +1,7 @@
-use logos::Lexer;
+use std::fmt::Display;
+
 use logos::Logos;
+mod types;
 
 #[derive(Debug, Logos, Copy, Clone)]
 #[logos(skip r"[ \t]+", error = ())]
@@ -25,35 +27,50 @@ pub enum Token<'a> {
     #[regex(r#"\"[^\"]*\""#, priority = 4)]
     QuotedString(&'a str),
 
-    #[regex(r#"(\w|\d|\[|\]|=|\^|\$|:|-|!|\*|~|\'|\.|\/)+"#)]
+    #[regex(r#"(\w|\d|\[|\]|=|\^|\$|:|-|\+|!|\*|~|\'|\.|\/)+"#)]
     Word(&'a str),
+}
+
+impl<'l> Display for Token<'l> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Comment(c) => write!(f, "# {}", c.trim()),
+            Self::BracketOpen => write!(f, "{{"),
+            Self::BracketClose => write!(f, "}}"),
+            Self::Semicolon => write!(f, ";"),
+            Self::BracedString(s) => write!(f, "({})", s),
+            Self::QuotedString(s) => write!(f, "\"{}\"", s),
+            Self::Word(s) => write!(f, "{}", s),
+            Self::Newline => write!(f, "\n"),
+        }
+    }
 }
 
 /// Statements are one-line, ';'-terminated directives
 /// Blocks are nulti-line, '{' and '}' enclosing directives
 /// Content of the directive preceding the ';'/'{' is stored in the `args` field as a `Vec<String>`
 /// The directive name is stored under args[0]
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum Structure {
+#[derive(Debug, Clone)]
+pub enum Structure<'l> {
     Statement {
-        args: Vec<String>,
+        args: Vec<Token<'l>>,
     },
     Block {
-        args: Vec<String>,
-        children: Vec<Structure>,
+        args: Vec<Token<'l>>,
+        children: Vec<Structure<'l>>,
     },
 }
 
-impl Structure {
-    pub fn args(&mut self) -> &mut Vec<String> {
+impl<'l> Structure<'l> {
+    pub fn args(&mut self) -> &mut Vec<Token<'l>> {
         match self {
-            Self::Statement { args } => args.as_mut(),
-            Self::Block { args, .. } => args.as_mut(),
+            Self::Statement { args } => args,
+            Self::Block { args, .. } => args,
         }
     }
-    pub fn children(&mut self) -> &mut Vec<Structure> {
+    pub fn children(&mut self) -> &mut Vec<Structure<'l>> {
         match self {
-            Self::Block { children, .. } => children.as_mut(),
+            Self::Block { children, .. } => children,
             _ => unreachable!(),
         }
     }
@@ -69,8 +86,8 @@ impl Structure {
     ///    let cfg = Structure::parse(cfg);
     ///```
     ///  
-    pub fn parse<'a>(cfg: &'a str) -> Result<Self, ()> {
-        let mut lex = Token::lexer(&cfg);
+    pub fn parse(cfg: &'l str) -> Result<Self, String> {
+        let mut lex = Token::lexer(&cfg).spanned();
         let mut stack = Vec::new();
         let mut current_block = Self::Block {
             args: Vec::new(),
@@ -81,8 +98,8 @@ impl Structure {
 
         loop {
             let token = match lex.next() {
-                Some(Ok(token)) => token,
-                Some(Err(())) => return Err(()),
+                Some((Ok(token), _)) => token,
+                Some((Err(()), span)) => return Err(format!("{:?}", span)),
                 None => break,
             };
 
@@ -133,18 +150,18 @@ impl Structure {
 
                 Token::Newline => {}
 
-                Token::QuotedString(content)
-                | Token::BracedString(content)
-                | Token::Word(content) => {
-                    current_statement.args().push(content.to_string());
-                }
+                Token::QuotedString(_content) => { current_statement.args().push(token); },
+                Token::BracedString(_content) => { current_statement.args().push(token); },
+                Token::Word(_content) => { current_statement.args().push(token); }
             }
         }
-
+        
         if let Self::Statement { args } = current_statement {
-            current_block.args().extend(args);
-        }
+            current_block.args().extend(args.clone());        
+        };       
 
         Ok(current_block)
     }
 }
+
+
