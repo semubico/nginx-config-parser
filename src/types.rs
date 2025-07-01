@@ -10,6 +10,7 @@ pub enum Location {
     Incasitive(Regex),
     Casitive(Regex),
     Virtual(String),
+    None
 }
 
 impl Location {
@@ -95,12 +96,18 @@ pub enum Directive {
     SslEarlyData {
         enabled: bool
     },
-    Location(Location),
+    Server {
+        children: Vec<Directive>
+    },
+    Location {
+        location: Location,
+        children: Vec<Directive>
+    },
 }
 
-impl<'l> TryFrom<crate::Structure<'l>> for Directive {
+impl<'l> TryFrom<&crate::Structure<'l>> for Directive {
     type Error = ();
-    fn try_from(value: crate::Structure) -> Result<Self, Self::Error> {
+    fn try_from(value: &crate::Structure) -> Result<Self, Self::Error> {
         if let Structure::Statement { args } = value {
             match args.get(0).map(|s| format!("{}", s)).as_deref() {
                 Some("error_log") => {
@@ -169,8 +176,28 @@ impl<'l> TryFrom<crate::Structure<'l>> for Directive {
                     let is_default = args.iter().any(|s| s.to_string().eq_ignore_ascii_case("default_server"));
                     let is_http2 = args.iter().any(|s| s.to_string().eq_ignore_ascii_case("http2"));
                     let is_http3 = args.iter().any(|s| s.to_string().eq_ignore_ascii_case("http3"));
+
                     return Ok(Self::Listen { sock_addr, is_default, is_http2, is_http3 })
                 },
+                Some("location") => {
+                    let location = Location::None; // Todo
+                    let Structure::Block { children, .. } = value else { Err(())? };
+                    let children = children
+                        .into_iter()
+                        .filter_map(|each| Directive::try_from(&*each).ok() )
+                        .collect::<Vec<_>>();
+                    
+                    return Ok(Self::Location { location, children })
+                },
+                Some("server") => {
+                    let Structure::Block { children, .. } = value else { Err(())? };
+                    let children = children
+                        .into_iter()
+                        .filter_map(|each| Directive::try_from(&*each).ok() )
+                        .collect::<Vec<_>>();
+                    
+                    return Ok(Self::Server { children })                    
+                }
                 
                 // TODO
                 
